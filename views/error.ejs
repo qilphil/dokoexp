@@ -19,7 +19,15 @@
           </div>
           <div class="card-body">
             <div class="alert alert-danger">
-              <%= message %>
+              <h5>
+                <%= message %>
+              </h5>
+              <% if (locals.details) { %>
+                <hr>
+                <p class="mb-0">
+                  <%= details %>
+                </p>
+                <% } %>
             </div>
             <a href="/" class="btn btn-primary">Return to Home</a>
           </div>

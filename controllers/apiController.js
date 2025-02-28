@@ -1,191 +1,191 @@
-const fs = require('fs');
-const path = require('path');
-const db = require('../db');
+import fs from 'fs/promises';
+import path from 'path';
+import dbPromise from '../db.js';
 
 /**
  * Process JSON data upload
  */
-exports.uploadJson = (req, res) => {
+export const uploadJson = async (req, res) => {
   try {
     // Check if we have JSON data in the request body
     if (req.body && (req.body.data || (req.body.Spiel && req.body.Spielrunde && req.body.Spieler))) {
       const jsonData = req.body.data || req.body;
-      processJsonData(jsonData, 'direct-api-upload.json', res);
+      await processJsonData(jsonData, 'direct-api-upload.json', res);
       return;
     }
 
     // If no JSON data in body
-    res.status(400).json({ error: 'No JSON data provided in request body. Use the data field or provide Spiel, Spielrunde, and Spieler arrays directly.' });
+    res.status(400).json({
+      error: 'No JSON data provided in request body. Use the data field or provide Spiel, Spielrunde, and Spieler arrays directly.'
+    });
   } catch (error) {
     console.error('Error processing JSON upload:', error);
-    res.status(500).json({ error: 'Error processing JSON data: ' + error.message });
+    res.status(500).json({ error: `Error processing JSON data: ${error.message}` });
   }
 };
 
 /**
  * Process file upload
  */
-exports.uploadFile = (req, res) => {
+export const uploadFile = async (req, res) => {
   try {
     if (!req.file) {
       return res.status(400).json({ error: 'No file uploaded' });
     }
 
-    const filePath = req.file.path;
-    const fileName = req.file.originalname;
+    const { path: filePath, originalname: fileName } = req.file;
 
     // Read the uploaded JSON file
-    fs.readFile(filePath, 'utf8', (err, data) => {
-      if (err) {
-        console.error('Error reading file:', err);
-        return res.status(500).json({ error: 'Error reading uploaded file' });
-      }
-
-      processJsonData(data, fileName, res);
-    });
+    const data = await fs.readFile(filePath, 'utf8');
+    await processJsonData(data, fileName, res);
   } catch (error) {
     console.error('Error processing file upload:', error);
-    res.status(500).json({ error: 'Error processing file upload: ' + error.message });
+    res.status(500).json({ error: `Error processing file upload: ${error.message}` });
   }
 };
 
 /**
  * Get all dumps
  */
-exports.getAllDumps = (req, res) => {
-  db.all('SELECT id, timestamp, filename FROM dumps ORDER BY timestamp DESC', (err, dumps) => {
-    if (err) {
-      console.error('Error fetching dumps:', err);
-      return res.status(500).json({ error: 'Error fetching dumps' });
-    }
+export const getAllDumps = async (req, res) => {
+  try {
+    const db = await dbPromise;
+    const dumps = await db.all('SELECT id, timestamp, filename FROM dumps ORDER BY timestamp DESC');
     res.json(dumps);
-  });
+  } catch (error) {
+    console.error('Error fetching dumps:', error);
+    res.status(500).json({ error: 'Error fetching dumps' });
+  }
 };
 
 /**
  * Get a specific dump by ID
  */
-exports.getDumpById = (req, res) => {
-  const dumpId = req.params.id;
+export const getDumpById = async (req, res) => {
+  try {
+    const { id: dumpId } = req.params;
+    const db = await dbPromise;
 
-  db.get('SELECT id, timestamp, filename, content FROM dumps WHERE id = ?', [dumpId], (err, dump) => {
-    if (err) {
-      console.error('Error fetching dump:', err);
-      return res.status(500).json({ error: 'Error fetching dump' });
-    }
+    const dump = await db.get('SELECT id, timestamp, filename, content FROM dumps WHERE id = ?', dumpId);
 
     if (!dump) {
       return res.status(404).json({ error: 'Dump not found' });
     }
 
     res.json(dump);
-  });
+  } catch (error) {
+    console.error('Error fetching dump:', error);
+    res.status(500).json({ error: `Error fetching dump: ${error.message}` });
+  }
 };
 
 /**
  * Process the JSON data and store it in the database
  */
-function processJsonData(jsonData, fileName, res) {
-  let data;
+async function processJsonData(jsonData, fileName, res) {
   try {
     // Parse the JSON data if it's a string
-    if (typeof jsonData === 'string') {
-      data = JSON.parse(jsonData);
-    } else {
-      data = jsonData;
-    }
+    const data = typeof jsonData === 'string' ? JSON.parse(jsonData) : jsonData;
 
     // Validate the data structure
     if (!data.Spiel || !data.Spielrunde || !data.Spieler) {
       return res.status(400).json({ error: 'Invalid JSON structure. Expected Spiel, Spielrunde, and Spieler arrays.' });
     }
 
+    const db = await dbPromise;
+
     // Store the JSON blob in the dumps table
-    db.run(
+    const result = await db.run(
       'INSERT INTO dumps (filename, content) VALUES (?, ?)',
-      [fileName, JSON.stringify(data)],
-      function (err) {
-        if (err) {
-          console.error('Error storing dump:', err);
-          return res.status(500).json({ error: 'Error storing dump in database' });
-        }
-
-        const dumpId = this.lastID;
-
-        // Insert data into the respective tables
-        insertSpielData(data.Spiel, dumpId);
-        insertSpielrundeData(data.Spielrunde, dumpId);
-        insertSpielerData(data.Spieler, dumpId);
-
-        res.status(201).json({
-          message: 'Database dump processed successfully',
-          dumpId: dumpId
-        });
-      }
+      [fileName, JSON.stringify(data)]
     );
+
+    const dumpId = result.lastID;
+
+    // Insert data into the respective tables
+    await insertSpielData(data.Spiel, dumpId, db);
+    await insertSpielrundeData(data.Spielrunde, dumpId, db);
+    await insertSpielerData(data.Spieler, dumpId, db);
+
+    res.status(201).json({
+      message: 'Database dump processed successfully',
+      dumpId
+    });
   } catch (error) {
     console.error('Error processing JSON data:', error);
-    res.status(400).json({ error: 'Invalid JSON data: ' + error.message });
+    res.status(400).json({ error: `Invalid JSON data: ${error.message}` });
   }
 }
 
 /**
  * Insert Spiel data into the spiel table
  */
-function insertSpielData(spielArray, dumpId) {
-  const stmt = db.prepare(`
+async function insertSpielData(spielArray, dumpId, db) {
+  const stmt = await db.prepare(`
     INSERT INTO spiel (
       id, dump_id, mandantId, geber, spielorder, score, 
       hasWon, data, startTime, endTime, solo, spielrunde
     ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
   `);
 
-  spielArray.forEach(spiel => {
-    stmt.run(
-      spiel.id, dumpId, spiel.mandantId, spiel.geber, spiel.spielorder, spiel.score,
-      spiel.hasWon, spiel.data, spiel.startTime, spiel.endTime, spiel.solo, spiel.spielrunde
-    );
-  });
+  for (const spiel of spielArray) {
+    const {
+      id, mandantId, geber, spielorder, score,
+      hasWon, data, startTime, endTime, solo, spielrunde
+    } = spiel;
 
-  stmt.finalize();
+    await stmt.run(
+      id, dumpId, mandantId, geber, spielorder, score,
+      hasWon, data, startTime, endTime, solo, spielrunde
+    );
+  }
+
+  await stmt.finalize();
 }
 
 /**
  * Insert Spielrunde data into the spielrunde table
  */
-function insertSpielrundeData(spielrundeArray, dumpId) {
-  const stmt = db.prepare(`
+async function insertSpielrundeData(spielrundeArray, dumpId, db) {
+  const stmt = await db.prepare(`
     INSERT INTO spielrunde (
       id, dump_id, mandantId, startTime, endTime, finished,
       comment, spieler, spiele, numSpiele, summen, data
     ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
   `);
 
-  spielrundeArray.forEach(spielrunde => {
-    stmt.run(
-      spielrunde.id, dumpId, spielrunde.mandantId, spielrunde.startTime, spielrunde.endTime, spielrunde.finished,
-      spielrunde.comment, spielrunde.spieler, spielrunde.spiele, spielrunde.numSpiele, spielrunde.summen, spielrunde.data
-    );
-  });
+  for (const spielrunde of spielrundeArray) {
+    const {
+      id, mandantId, startTime, endTime, finished,
+      comment, spieler, spiele, numSpiele, summen, data
+    } = spielrunde;
 
-  stmt.finalize();
+    await stmt.run(
+      id, dumpId, mandantId, startTime, endTime, finished,
+      comment, spieler, spiele, numSpiele, summen, data
+    );
+  }
+
+  await stmt.finalize();
 }
 
 /**
  * Insert Spieler data into the spieler table
  */
-function insertSpielerData(spielerArray, dumpId) {
-  const stmt = db.prepare(`
+async function insertSpielerData(spielerArray, dumpId, db) {
+  const stmt = await db.prepare(`
     INSERT INTO spieler (
       id, dump_id, mandantId, name, kurzName, initials, data
     ) VALUES (?, ?, ?, ?, ?, ?, ?)
   `);
 
-  spielerArray.forEach(spieler => {
-    stmt.run(
-      spieler.id, dumpId, spieler.mandantId, spieler.name, spieler.kurzName, spieler.initials, spieler.data
-    );
-  });
+  for (const spieler of spielerArray) {
+    const { id, mandantId, name, kurzName, initials, data } = spieler;
 
-  stmt.finalize();
+    await stmt.run(
+      id, dumpId, mandantId, name, kurzName, initials, data
+    );
+  }
+
+  await stmt.finalize();
 } 

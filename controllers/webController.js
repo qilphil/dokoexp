@@ -1,44 +1,45 @@
-const db = require('../db');
+import dbPromise from '../db.js';
 
 /**
  * Renders the home page with a list of all dumps
  */
-exports.getHomePage = (req, res) => {
-  db.all('SELECT id, timestamp, filename FROM dumps ORDER BY timestamp DESC', (err, dumps) => {
-    if (err) {
-      console.error('Error fetching dumps:', err);
-      return res.status(500).render('error', { message: 'Error fetching database dumps' });
-    }
+export const getHomePage = async (req, res) => {
+  try {
+    const db = await dbPromise;
+    const dumps = await db.all('SELECT id, timestamp, filename FROM dumps ORDER BY timestamp DESC');
     res.render('index', { dumps });
-  });
+  } catch (error) {
+    console.error('Error fetching dumps:', error);
+    res.status(500).render('error', { message: 'Error fetching database dumps' });
+  }
 };
 
 /**
  * Renders the dump details page for a specific dump
  */
-exports.getDumpDetails = (req, res) => {
-  const dumpId = req.params.id;
+export const getDumpDetails = async (req, res) => {
+  try {
+    const { id: dumpId } = req.params;
+    const db = await dbPromise;
 
-  // Get the dump details
-  db.get('SELECT id, timestamp, filename FROM dumps WHERE id = ?', [dumpId], (err, dump) => {
-    if (err || !dump) {
-      console.error('Error fetching dump:', err);
+    // Get the dump details
+    const dump = await db.get('SELECT id, timestamp, filename FROM dumps WHERE id = ?', dumpId);
+
+    if (!dump) {
       return res.status(404).render('error', { message: 'Dump not found' });
     }
 
     // Get statistics for this dump
-    db.all(`
+    const stats = await db.get(`
       SELECT 
         (SELECT COUNT(*) FROM spiel WHERE dump_id = ?) AS spielCount,
         (SELECT COUNT(*) FROM spielrunde WHERE dump_id = ?) AS spielrundeCount,
         (SELECT COUNT(*) FROM spieler WHERE dump_id = ?) AS spielerCount
-    `, [dumpId, dumpId, dumpId], (err, stats) => {
-      if (err) {
-        console.error('Error fetching stats:', err);
-        return res.status(500).render('error', { message: 'Error fetching statistics' });
-      }
+    `, [dumpId, dumpId, dumpId]);
 
-      res.render('dump', { dump, stats: stats[0] });
-    });
-  });
+    res.render('dump', { dump, stats });
+  } catch (error) {
+    console.error('Error fetching dump details:', error);
+    res.status(500).render('error', { message: `Error fetching dump details: ${error.message}` });
+  }
 }; 

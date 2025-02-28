@@ -1,18 +1,19 @@
-const express = require('express');
+import express from 'express';
+import * as apiController from '../controllers/apiController.js';
+import upload from '../config/upload.js';
+
 const router = express.Router();
-const apiController = require('../controllers/apiController');
-const upload = require('../config/upload');
 
-// Handle direct JSON data upload
-router.post('/upload', apiController.uploadJson);
+// Route for uploading JSON data directly via POST request
+router.post('/upload/json', apiController.uploadJson);
 
-// Handle file uploads
+// Route for uploading JSON file
 router.post('/upload/file', upload.single('file'), apiController.uploadFile);
 
-// Get all dumps
+// Route to get all dumps
 router.get('/dumps', apiController.getAllDumps);
 
-// Get a specific dump
+// Route to get a specific dump by ID
 router.get('/dumps/:id', apiController.getDumpById);
 
-module.exports = router; 
+export default router; 
