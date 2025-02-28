@@ -42,4 +42,30 @@ export const getDumpDetails = async (req, res) => {
     console.error('Error fetching dump details:', error);
     res.status(500).render('error', { message: `Error fetching dump details: ${error.message}` });
   }
+};
+
+/**
+ * Gets the Spiel data for a specific dump, sorted by Spielrunde and Spielorder
+ */
+export const getSpielData = async (req, res) => {
+  try {
+    const { id: dumpId } = req.params;
+    const db = await dbPromise;
+
+    // Get the Spiel data sorted by Spielrunde and Spielorder
+    const spielData = await db.all(`
+      SELECT * FROM spiel 
+      WHERE dump_id = ? 
+      ORDER BY spielrunde ASC, spielorder ASC
+    `, dumpId);
+
+    if (!spielData || spielData.length === 0) {
+      return res.status(404).json({ error: 'No Spiel data found for this dump' });
+    }
+
+    res.json(spielData);
+  } catch (error) {
+    console.error('Error fetching Spiel data:', error);
+    res.status(500).json({ error: `Error fetching Spiel data: ${error.message}` });
+  }
 }; 

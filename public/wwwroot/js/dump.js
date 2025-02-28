@@ -21,7 +21,41 @@ function loadTabData(tabId, dumpId) {
     return;
   }
 
-  fetch(`/api/dumps/${dumpId}`)
+  // Show loading spinner
+  container.innerHTML = `
+    <div class="text-center py-5">
+      <div class="spinner-border" role="status">
+        <span class="visually-hidden">Loading...</span>
+      </div>
+      <p class="mt-2">Loading ${tabId} data...</p>
+    </div>
+  `;
+
+  // Use different endpoints based on the tab
+  let endpoint = `/api/dumps/${dumpId}`;
+
+  if (tabId === 'spiel') {
+    // Use the dedicated endpoint for sorted Spiel data
+    fetch(`/api/dumps/${dumpId}/spiel`)
+      .then(response => response.json())
+      .then(data => {
+        if (data.error) {
+          container.innerHTML = `<div class="alert alert-danger">${data.error}</div>`;
+          return;
+        }
+
+        renderSpielData(container, data);
+        container.setAttribute('data-loaded', 'true');
+      })
+      .catch(error => {
+        console.error('Error fetching Spiel data:', error);
+        container.innerHTML = `<div class="alert alert-danger">Error fetching Spiel data: ${error.message}</div>`;
+      });
+    return;
+  }
+
+  // For other tabs, use the original endpoint
+  fetch(endpoint)
     .then(response => response.json())
     .then(data => {
       if (data.error) {
@@ -32,9 +66,7 @@ function loadTabData(tabId, dumpId) {
       try {
         const jsonData = typeof data.content === 'string' ? JSON.parse(data.content) : data.content;
 
-        if (tabId === 'spiel' && jsonData.Spiel) {
-          renderSpielData(container, jsonData.Spiel);
-        } else if (tabId === 'spielrunde' && jsonData.Spielrunde) {
+        if (tabId === 'spielrunde' && jsonData.Spielrunde) {
           renderSpielrundeData(container, jsonData.Spielrunde);
         } else if (tabId === 'spieler' && jsonData.Spieler) {
           renderSpielerData(container, jsonData.Spieler);
@@ -68,12 +100,12 @@ function renderSpielData(container, spielData) {
         <thead>
           <tr>
             <th>ID</th>
-            <th>Geber</th>
+            <th>Spielrunde</th>
             <th>Spielorder</th>
+            <th>Geber</th>
             <th>Score</th>
             <th>Results</th>
             <th>Solo</th>
-            <th>Spielrunde</th>
             <th>Start Time</th>
             <th>End Time</th>
           </tr>
@@ -118,17 +150,32 @@ function renderSpielData(container, spielData) {
       console.log('No hasWon data to display');
     }
 
+    // Format dates
+    let startTime = 'N/A';
+    let endTime = 'N/A';
+
+    try {
+      if (spiel.startTime) {
+        startTime = new Date(spiel.startTime).toLocaleString();
+      }
+      if (spiel.endTime) {
+        endTime = new Date(spiel.endTime).toLocaleString();
+      }
+    } catch (e) {
+      console.error('Error formatting dates:', e);
+    }
+
     html += `
       <tr>
         <td>${spiel.id}</td>
-        <td>${spiel.geber}</td>
+        <td>${spiel.spielrunde}</td>
         <td>${spiel.spielorder}</td>
+        <td>${spiel.geber}</td>
         <td>${spiel.score}</td>
         <td class="pips-container">${pipsHtml}</td>
         <td>${spiel.solo ? 'Yes' : 'No'}</td>
-        <td>${spiel.spielrunde}</td>
-        <td>${new Date(spiel.startTime).toLocaleString()}</td>
-        <td>${new Date(spiel.endTime).toLocaleString()}</td>
+        <td>${startTime}</td>
+        <td>${endTime}</td>
       </tr>`;
   });
 

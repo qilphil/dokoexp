@@ -72,6 +72,30 @@ export const getDumpById = async (req, res) => {
       return res.status(404).json({ error: 'Dump not found' });
     }
 
+    // If the content is a string, parse it to JSON
+    if (typeof dump.content === 'string' && dump.content) {
+      try {
+        const content = JSON.parse(dump.content);
+
+        // If Spiel data exists, sort it by Spielrunde and then by Spielorder
+        if (content.Spiel && Array.isArray(content.Spiel)) {
+          content.Spiel.sort((a, b) => {
+            // First compare by Spielrunde
+            if (a.spielrunde !== b.spielrunde) {
+              return a.spielrunde - b.spielrunde;
+            }
+            // If Spielrunde is the same, compare by Spielorder
+            return a.spielorder - b.spielorder;
+          });
+        }
+
+        dump.content = content;
+      } catch (parseError) {
+        console.error('Error parsing JSON content:', parseError);
+        // Keep the content as a string if parsing fails
+      }
+    }
+
     res.json(dump);
   } catch (error) {
     console.error('Error fetching dump:', error);
