@@ -35,6 +35,9 @@ const setupMiddleware = () => {
   app.use(express.static(path.join(__dirname, 'public')));
   app.use('/js', express.static(path.join(__dirname, 'public/wwwroot/js')));
   app.use('/css', express.static(path.join(__dirname, 'public/wwwroot/css')));
+
+  // Serve Bootstrap files from node_modules
+  app.use('/bootstrap', express.static(path.join(__dirname, 'node_modules/bootstrap/dist')));
 };
 
 // Routes setup
